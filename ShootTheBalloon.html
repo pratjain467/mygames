@@ -16,9 +16,12 @@
         #gameCanvas {
             border: 1px solid black;
         }
-        #score, #gameOver {
+        #disclaimer, #score, #gameOver {
             font-size: 24px;
             margin: 10px;
+        }
+        #disclaimer {
+            color: blue;
         }
         #gameOver {
             display: none;
@@ -27,10 +30,12 @@
     </style>
 </head>
 <body>
+    <div id="disclaimer">Use Spacebar to Shoot Arrow</div>
     <div id="score">Score: 0</div>
     <canvas id="gameCanvas" width="800" height="400"></canvas>
     <div id="gameOver">Game Over! Press R to Restart</div>
     <audio id="bowShotSound" src="bow-shot.mp3"></audio>
+    <audio id="windBgSound" src="wind-bg.mp3" loop></audio>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -38,6 +43,7 @@
         const scoreDisplay = document.getElementById('score');
         const gameOverDisplay = document.getElementById('gameOver');
         const bowShotSound = document.getElementById('bowShotSound');
+        const windBgSound = document.getElementById('windBgSound');
 
         let score = 0;
         let gameOver = false;
@@ -52,6 +58,16 @@
         const speedIncrement = 0.2; // Speed increase per reset
         let hasShot = false; // Tracks if player shot an arrow for current balloon
 
+        // Visual effects
+        let particles = []; // For hit effect (pop burst)
+        let missEffect = null; // For miss emoji
+
+        // Start background wind sound
+        windBgSound.volume = 0.2; // Low volume to keep subtle
+        windBgSound.play().catch((error) => {
+            console.log('Background audio playback failed:', error);
+        });
+
         function getRandomColor() {
             const colors = ['red', 'blue', 'green', 'yellow', 'purple'];
             return colors[Math.floor(Math.random() * colors.length)];
@@ -62,6 +78,71 @@
             // and above bow (at 380px, canvas.height - 20), ensuring bottom (y + 30 + 20)
             // is at least 30px above bow (lowest y = 300, bottom = 350px)
             return Math.random() * (300 - 50) + 50;
+        }
+
+        // Particle for hit effect
+        function createParticles(x, y) {
+            for (let i = 0; i < 10; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    radius: Math.random() * 3 + 1,
+                    vx: (Math.random() - 0.5) * 8, // Random horizontal velocity
+                    vy: (Math.random() - 0.5) * 8, // Random vertical velocity
+                    alpha: 1, // Start fully opaque
+                    life: 30 // Frames to live (0.5s at 60fps)
+                });
+            }
+        }
+
+        function updateParticles() {
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                p.alpha = p.life / 30; // Fade out
+            });
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`; // White, fading
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        // Miss effect (sad emoji)
+        function createMissEffect() {
+            missEffect = {
+                emoji: '😣', // Sad emoji with tongue out
+                x: canvas.width / 2,
+                y: 50,
+                alpha: 1,
+                life: 60 // Frames to live (1s at 60fps)
+            };
+        }
+
+        function updateMissEffect() {
+            if (missEffect) {
+                missEffect.life--;
+                missEffect.alpha = missEffect.life / 60; // Fade out
+                if (missEffect.life <= 0) {
+                    missEffect = null;
+                }
+            }
+        }
+
+        function drawMissEffect() {
+            if (missEffect) {
+                ctx.font = '36px Arial'; // Larger for emoji visibility
+                ctx.fillStyle = `rgba(255, 165, 0, ${missEffect.alpha})`; // Orange, fading
+                ctx.textAlign = 'center';
+                ctx.fillText(missEffect.emoji, missEffect.x, missEffect.y);
+            }
         }
 
         function drawBackground() {
@@ -190,6 +271,7 @@
                     gameOverDisplay.style.display = 'block';
                     arrow = null;
                     hasShot = false;
+                    createMissEffect(); // Show sad emoji
                 }
             }
 
@@ -201,6 +283,7 @@
                 if (distance < balloon.radius) {
                     score++;
                     scoreDisplay.textContent = `Score: ${score}`;
+                    createParticles(balloon.x, balloon.y); // Show hit visual
                     balloon.x = -balloon.radius;
                     balloon.y = getRandomY();
                     balloon.color = getRandomColor();
@@ -209,6 +292,10 @@
                     hasShot = false; // Reset shot tracking after hit
                 }
             }
+
+            // Update visual effects
+            updateParticles();
+            updateMissEffect();
         }
 
         function draw() {
@@ -217,6 +304,8 @@
             drawBalloon();
             drawArrow();
             drawBow();
+            drawParticles(); // Draw hit particles
+            drawMissEffect(); // Draw miss emoji
         }
 
         function gameLoop() {
@@ -249,6 +338,8 @@
                 balloon.speed = 2; // Reset speed to initial value
                 arrow = null;
                 hasShot = false; // Reset shot tracking
+                particles = []; // Clear hit particles
+                missEffect = null; // Clear miss effect
                 gameLoop();
             }
         });
