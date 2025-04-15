@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shoot the Balloon</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            border: 1px solid black;
+        }
+        #score, #gameOver {
+            font-size: 24px;
+            margin: 10px;
+        }
+        #gameOver {
+            display: none;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="gameOver">Game Over! Press R to Restart</div>
+    <audio id="bowShotSound" src="bow-shot.mp3"></audio>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const gameOverDisplay = document.getElementById('gameOver');
+        const bowShotSound = document.getElementById('bowShotSound');
+
+        let score = 0;
+        let gameOver = false;
+        let balloon = {
+            x: 0,
+            y: getRandomY(),
+            radius: 30,
+            speed: 2, // Initial speed
+            color: getRandomColor()
+        };
+        let arrow = null;
+        const speedIncrement = 0.2; // Speed increase per reset
+        let hasShot = false; // Tracks if player shot an arrow for current balloon
+
+        function getRandomColor() {
+            const colors = ['red', 'blue', 'green', 'yellow', 'purple'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        function getRandomY() {
+            // Random y-position between 50 and 300 to keep balloon in sky (0 to 280px)
+            // and above bow (at 380px, canvas.height - 20), ensuring bottom (y + 30 + 20)
+            // is at least 30px above bow (lowest y = 300, bottom = 350px)
+            return Math.random() * (300 - 50) + 50;
+        }
+
+        function drawBackground() {
+            // Sky with gradient
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.7);
+            skyGradient.addColorStop(0, '#87CEEB'); // Light blue at top
+            skyGradient.addColorStop(1, '#E0F6FF'); // Lighter blue near horizon
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height * 0.7);
+
+            // Grass
+            ctx.fillStyle = '#228B22'; // Forest green
+            ctx.fillRect(0, canvas.height * 0.7, canvas.width, canvas.height * 0.3);
+
+            // Ground texture (simple grass blades)
+            ctx.strokeStyle = '#006400'; // Dark green
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 10) {
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height * 0.7 + 10);
+                ctx.lineTo(x + 5, canvas.height * 0.7);
+                ctx.stroke();
+            }
+        }
+
+        function drawBalloon() {
+            ctx.beginPath();
+            ctx.arc(balloon.x, balloon.y, balloon.radius, 0, Math.PI * 2);
+            ctx.fillStyle = balloon.color;
+            ctx.fill();
+            // Draw string
+            ctx.beginPath();
+            ctx.moveTo(balloon.x, balloon.y + balloon.radius);
+            ctx.lineTo(balloon.x, balloon.y + balloon.radius + 20);
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function drawBow() {
+            const bowX = canvas.width / 2;
+            const bowY = canvas.height - 20;
+            const bowWidth = 40;
+            const bowHeight = 20;
+
+            ctx.beginPath();
+            ctx.strokeStyle = 'brown';
+            ctx.lineWidth = 4;
+
+            // Draw curved bow shape
+            ctx.moveTo(bowX - bowWidth / 2, bowY);
+            ctx.quadraticCurveTo(bowX, bowY - bowHeight, bowX + bowWidth / 2, bowY);
+            ctx.stroke();
+
+            // Draw bowstring
+            ctx.beginPath();
+            ctx.strokeStyle = 'gray';
+            ctx.lineWidth = 2;
+            ctx.moveTo(bowX - bowWidth / 2, bowY);
+            ctx.lineTo(bowX + bowWidth / 2, bowY);
+            ctx.stroke();
+
+            ctx.closePath();
+        }
+
+        function drawArrow() {
+            if (arrow) {
+                const arrowLength = 30;
+                const wingWidth = 10;
+                const headWidth = 6;
+
+                ctx.beginPath();
+                ctx.fillStyle = 'brown';
+                ctx.strokeStyle = 'brown';
+                ctx.lineWidth = 2;
+
+                // Shaft
+                ctx.moveTo(arrow.x, arrow.y);
+                ctx.lineTo(arrow.x, arrow.y - arrowLength);
+                ctx.stroke();
+
+                // Arrowhead (pointy top)
+                ctx.beginPath();
+                ctx.moveTo(arrow.x, arrow.y - arrowLength);
+                ctx.lineTo(arrow.x - headWidth, arrow.y - arrowLength + 8);
+                ctx.lineTo(arrow.x + headWidth, arrow.y - arrowLength + 8);
+                ctx.lineTo(arrow.x, arrow.y - arrowLength);
+                ctx.fill();
+
+                // Fletching (wings at bottom)
+                ctx.beginPath();
+                ctx.moveTo(arrow.x - wingWidth, arrow.y - 5);
+                ctx.lineTo(arrow.x, arrow.y);
+                ctx.lineTo(arrow.x + wingWidth, arrow.y - 5);
+                ctx.stroke();
+
+                ctx.closePath();
+            }
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Update balloon position
+            balloon.x += balloon.speed;
+            if (balloon.x > canvas.width + balloon.radius) {
+                if (!hasShot) {
+                    // End game if player didn't shoot
+                    gameOver = true;
+                    gameOverDisplay.style.display = 'block';
+                    return;
+                }
+                // Reset balloon
+                balloon.x = -balloon.radius;
+                balloon.y = getRandomY();
+                balloon.color = getRandomColor();
+                balloon.speed += speedIncrement;
+                hasShot = false; // Reset shot tracking for new balloon
+            }
+
+            // Update arrow position
+            if (arrow) {
+                arrow.y -= 5;
+                if (arrow.y < 0) {
+                    gameOver = true;
+                    gameOverDisplay.style.display = 'block';
+                    arrow = null;
+                    hasShot = false;
+                }
+            }
+
+            // Check collision
+            if (arrow) {
+                const dx = arrow.x - balloon.x;
+                const dy = (arrow.y - 15) - balloon.y; // Check collision at arrowhead
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < balloon.radius) {
+                    score++;
+                    scoreDisplay.textContent = `Score: ${score}`;
+                    balloon.x = -balloon.radius;
+                    balloon.y = getRandomY();
+                    balloon.color = getRandomColor();
+                    balloon.speed += speedIncrement;
+                    arrow = null;
+                    hasShot = false; // Reset shot tracking after hit
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            drawBalloon();
+            drawArrow();
+            drawBow();
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (!gameOver) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !arrow && !gameOver) {
+                arrow = { x: canvas.width / 2, y: canvas.height - 20 }; // Start arrow at bow
+                hasShot = true; // Mark that player has shot
+                // Play bow shot sound
+                bowShotSound.currentTime = 0; // Rewind to start
+                bowShotSound.play().catch((error) => {
+                    console.log('Audio playback failed:', error);
+                });
+            }
+            if (e.code === 'KeyR' && gameOver) {
+                // Restart game
+                score = 0;
+                scoreDisplay.textContent = `Score: ${score}`;
+                gameOver = false;
+                gameOverDisplay.style.display = 'none';
+                balloon.x = 0;
+                balloon.y = getRandomY();
+                balloon.color = getRandomColor();
+                balloon.speed = 2; // Reset speed to initial value
+                arrow = null;
+                hasShot = false; // Reset shot tracking
+                gameLoop();
+            }
+        });
+
+        gameLoop();
+    </script>
+</body>
+</html>
